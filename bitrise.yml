@@ -1,0 +1,85 @@
+---
+format_version: '13'
+default_step_lib_source: https://github.com/bitrise-io/bitrise-steplib.git
+project_type: flutter
+
+trigger_map:
+- push_branch: main
+  workflow: deploy
+- pull_request_source_branch: "*"
+  workflow: primary
+
+workflows:
+  deploy:
+    description: |
+      Builds and deploys the Flutter web app to Firebase Hosting
+    steps:
+    - activate-ssh-key@4:
+        run_if: '{{getenv "SSH_RSA_PRIVATE_KEY" | ne ""}}'
+    - git-clone@8: {}
+    - flutter-installer@0:
+        inputs:
+        - version: stable
+        - is_update: 'true'
+    - cache-pull@2: {}
+    - script@1:
+        title: Flutter pub get
+        inputs:
+        - content: |-
+            #!/usr/bin/env bash
+            set -ex
+            flutter pub get
+    - script@1:
+        title: Flutter build web
+        inputs:
+        - content: |-
+            #!/usr/bin/env bash
+            set -ex
+            flutter build web --release
+    - script@1:
+        title: Deploy to Firebase Hosting
+        inputs:
+        - content: |-
+            #!/usr/bin/env bash
+            set -ex
+            npm install -g firebase-tools
+            firebase deploy --only hosting --token "$FIREBASE_TOKEN"
+    - cache-push@2: {}
+    - deploy-to-bitrise-io@2: {}
+
+  primary:
+    description: |
+      Runs tests and builds the app
+    steps:
+    - activate-ssh-key@4:
+        run_if: '{{getenv "SSH_RSA_PRIVATE_KEY" | ne ""}}'
+    - git-clone@8: {}
+    - flutter-installer@0:
+        inputs:
+        - version: stable
+        - is_update: 'true'
+    - cache-pull@2: {}
+    - script@1:
+        title: Flutter pub get
+        inputs:
+        - content: |-
+            #!/usr/bin/env bash
+            set -ex
+            flutter pub get
+    - flutter-analyze@0: {}
+    - flutter-test@1: {}
+    - script@1:
+        title: Flutter build web
+        inputs:
+        - content: |-
+            #!/usr/bin/env bash
+            set -ex
+            flutter build web --release
+    - cache-push@2: {}
+    - deploy-to-bitrise-io@2: {}
+
+app:
+  envs:
+  - opts:
+      is_expand: false
+    FLUTTER_BUILD_MODE: release
