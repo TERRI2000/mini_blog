@@ -1,0 +1,27 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Користувачі: читати можуть всі, писати - тільки власник
+    match /users/{userId} {
+      allow read: if true;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Пости: читати можуть всі, створювати - авторизовані, редагувати/видаляти - тільки автор
+    match /posts/{postId} {
+      allow read: if true;
+      allow create: if request.auth != null;
+      allow update, delete: if request.auth != null && 
+                              resource.data.authorId == request.auth.uid;
+    }
+    
+    // Коментарі: читати можуть всі, створювати - авторизовані, редагувати/видаляти - тільки автор
+    match /comments/{commentId} {
+      allow read: if true;
+      allow create: if request.auth != null;
+      allow update, delete: if request.auth != null && 
+                              resource.data.authorId == request.auth.uid;
+    }
+  }
+}

@@ -1,0 +1,61 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Функція перевірки автентифікації
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Функція перевірки власника
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+    
+    // Функція перевірки розміру файлу (максимум 5 МБ)
+    function isValidSize() {
+      return request.resource.size <= 5 * 1024 * 1024;
+    }
+    
+    // Функція перевірки типу файлу (тільки зображення)
+    function isImage() {
+      return request.resource.contentType.matches('image/.*');
+    }
+    
+    // Правила для аватарів користувачів
+    // Підтримка файлів типу avatars/{userId}.jpg, avatars/{userId}.png тощо
+    match /avatars/{allPaths=**} {
+      // Читання: всі можуть переглядати
+      allow read: if true;
+      
+      // Запис: будь-який автентифікований користувач може завантажити аватар
+      // (перевірка власника відбувається на рівні додатку)
+      allow write: if isAuthenticated() 
+                   && isImage() 
+                   && isValidSize();
+      
+      // Видалення: будь-який автентифікований користувач
+      allow delete: if isAuthenticated();
+    }
+    
+    // Правила для зображень постів
+    match /posts/{userId}/{allPaths=**} {
+      // Читання: всі можуть переглядати
+      allow read: if true;
+      
+      // Запис: тільки власник, тільки зображення, максимум 5 МБ
+      allow write: if isAuthenticated() 
+                   && isOwner(userId) 
+                   && isImage() 
+                   && isValidSize();
+      
+      // Видалення: тільки власник
+      allow delete: if isAuthenticated() && isOwner(userId);
+    }
+    
+    // Заборонити доступ до всіх інших файлів
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

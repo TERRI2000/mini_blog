@@ -1,0 +1,490 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:mini_blog/features/feed/widgets/post_card_widget.dart';
+import 'package:mini_blog/features/feed/screens/post_detail_screen.dart';
+import 'package:mini_blog/core/widgets/app_layout.dart';
+import 'package:mini_blog/features/profile/screens/profile_screen.dart';
+import 'package:mini_blog/features/feed/screens/notifications_screen.dart';
+import 'package:mini_blog/features/feed/screens/search_screen.dart';
+import 'package:mini_blog/core/providers/posts_provider.dart';
+import 'package:mini_blog/features/feed/widgets/post_form_dialog.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
+/// Головний екран застосунку (Стрічка)
+/// 
+/// Відображає ліву навігаційну панель та центральну стрічку постів.
+/// Використовує hardcoded дані для демонстрації функціоналу.
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Завантажуємо пости при ініціалізації
+    Future.microtask(() {
+      context.read<PostsProvider>().loadPosts();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AppLayout(
+      selectedIndex: 0, // Головна сторінка
+      onNavigationTap: (index) {
+        // Навігація на відповідні екрани
+        switch (index) {
+          case 0: // Головна - вже тут
+            break;
+          case 1: // Профіль
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (context) => const ProfileScreen()),
+            );
+            break;
+          case 2: // Сповіщення
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (context) => const NotificationsScreen()),
+            );
+            break;
+          case 3: // Пошук
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (context) => const SearchScreen()),
+            );
+            break;
+        }
+      },
+      child: Row(
+        children: [
+          // Центральна стрічка постів
+          Expanded(
+            flex: 2,
+            child: Center(
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 600),
+                child: Consumer<PostsProvider>(
+                  builder: (context, postsProvider, child) {
+                    // Показуємо індикатор завантаження
+                    if (postsProvider.isLoading) {
+                      return const Center(
+                        child: CircularProgressIndicator(
+                          color: Color(0xFF5B4EFF),
+                        ),
+                      );
+                    }
+
+                    // Показуємо помилку
+                    if (postsProvider.hasError) {
+                      return Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(
+                              Icons.error_outline,
+                              size: 64,
+                              color: Colors.red,
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'Помилка завантаження постів',
+                              style: TextStyle(
+                                fontSize: 18,
+                                color: Colors.grey[800],
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              postsProvider.errorMessage ?? 'Невідома помилка',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                            const SizedBox(height: 24),
+                            ElevatedButton(
+                              onPressed: () => postsProvider.loadPosts(),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF5B4EFF),
+                              ),
+                              child: const Text('Спробувати знову'),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+
+                    // Показуємо пости
+                    final posts = postsProvider.posts;
+                    if (posts.isEmpty) {
+                      return Center(
+                        child: Text(
+                          'Немає постів',
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      );
+                    }
+
+                    return ListView.builder(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: posts.length,
+                      itemBuilder: (context, index) {
+                        final post = posts[index];
+                        final currentUser = FirebaseAuth.instance.currentUser;
+                        final isOwnPost = currentUser?.uid == post.authorId;
+                        
+                        return GestureDetector(
+                          onTap: () {
+                            // Навігація на екран деталей поста
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => PostDetailScreen(
+                                  post: post,
+                                ),
+                              ),
+                            ).then((_) {
+                              // Перезавантажуємо пости після повернення
+                              context.read<PostsProvider>().loadPosts();
+                            });
+                          },
+                          child: PostCardWidget(
+                            post: post,
+                            onEdit: isOwnPost
+                                ? () {
+                                    // Відкриваємо діалог редагування
+                                    showDialog(
+                                      context: context,
+                                      builder: (context) => PostFormDialog(post: post),
+                                    ).then((updated) {
+                                      // Якщо пост оновлено, перезавантажуємо список
+                                      if (updated == true) {
+                                        context.read<PostsProvider>().loadPosts();
+                                      }
+                                    });
+                                  }
+                                : null,
+                            onDelete: isOwnPost
+                                ? () async {
+                                    // Показуємо діалог підтвердження
+                                    final confirm = await showDialog<bool>(
+                                      context: context,
+                                      builder: (context) => AlertDialog(
+                                        title: const Text('Видалити пост?'),
+                                        content: const Text(
+                                          'Цю дію не можна буде скасувати.',
+                                        ),
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () =>
+                                                Navigator.of(context).pop(false),
+                                            child: const Text('Скасувати'),
+                                          ),
+                                          TextButton(
+                                            onPressed: () =>
+                                                Navigator.of(context).pop(true),
+                                            style: TextButton.styleFrom(
+                                              foregroundColor: Colors.red,
+                                            ),
+                                            child: const Text('Видалити'),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+
+                                    if (confirm == true) {
+                                      try {
+                                        await context
+                                            .read<PostsProvider>()
+                                            .removePost(post.id);
+                                        if (!context.mounted) return;
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(
+                                            content: Text('Пост видалено'),
+                                            backgroundColor: Colors.green,
+                                          ),
+                                        );
+                                      } catch (e) {
+                                        if (!context.mounted) return;
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text('Помилка: $e'),
+                                            backgroundColor: Colors.red,
+                                          ),
+                                        );
+                                      }
+                                    }
+                                  }
+                                : null,
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+          
+          // Права рекламна панель
+          Expanded(
+            flex: 1,
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.grey[50],
+                border: Border(
+                  left: BorderSide(color: Colors.grey[200]!),
+                ),
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                  // Заголовок реклами
+                  const Text(
+                    'Рекомендовані товари',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Спонсоровано',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                  
+                  const SizedBox(height: 20),
+                  
+                  // Рекламна картка 1
+                  _AdCard(
+                    title: 'Naruto Classic',
+                    description: 'Класична футболка високої якості',
+                    price: '549 ₴',
+                    imageUrl: 'https://www.fatline.com.ua/images/products/prints/8man_f1_28.png',
+                    imageColor: Colors.grey[100],
+                    imageText: 'NARUTO',
+                    isLight: true,
+                  ),
+                  
+                  const SizedBox(height: 16),
+                  
+                  // Рекламна картка 2
+                  _AdCard(
+                    title: 'Naruto Limited Edition',
+                    description: 'Ексклюзивна футболка з принтом',
+                    price: '599 ₴',
+                    imageUrl: 'https://e-c.storage.googleapis.com/res/43f2977b-2ba2-488a-9210-e6f0cce7db82/original',
+                    imageColor: Colors.grey[800],
+                    imageText: 'NARUTO',
+                  ),
+                  
+                  const SizedBox(height: 16),
+                  
+                  // Рекламна картка 3
+                  _AdCard(
+                    title: 'Kakashi Premium',
+                    description: 'Стильний дизайн для справжніх фанатів',
+                    price: '649 ₴',
+                    imageUrl: 'https://images.prom.ua/3946628206_w1280_h640_3946628206.jpg',
+                    imageColor: Colors.grey[900],
+                    imageText: 'KAKASHI',
+                  ),                
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Віджет для рекламної картки
+class _AdCard extends StatelessWidget {
+  final String title;
+  final String description;
+  final String price;
+  final String? imageUrl;
+  final Color? imageColor;
+  final String? imageText;
+  final bool isLight;
+
+  const _AdCard({
+    required this.title,
+    required this.description,
+    required this.price,
+    this.imageUrl,
+    this.imageColor,
+    this.imageText,
+    this.isLight = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey[200]!),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Зображення товару
+          Container(
+            height: 180,
+            decoration: BoxDecoration(
+              color: imageColor ?? Colors.grey[200],
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(12),
+                topRight: Radius.circular(12),
+              ),
+            ),
+            child: ClipRRect(
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(12),
+                topRight: Radius.circular(12),
+              ),
+              child: imageUrl != null
+                  ? Image.network(
+                      imageUrl!,
+                      height: 180,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) {
+                        // Якщо зображення не завантажилось, показуємо іконку
+                        return Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.checkroom,
+                                size: 60,
+                                color: isLight ? Colors.orange : Colors.white.withOpacity(0.9),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                imageText ?? '',
+                                style: TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                  color: isLight ? Colors.orange : Colors.white,
+                                  letterSpacing: 2,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    )
+                  : Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.checkroom,
+                            size: 60,
+                            color: isLight ? Colors.orange : Colors.white.withOpacity(0.9),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            imageText ?? '',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: isLight ? Colors.orange : Colors.white,
+                              letterSpacing: 2,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+            ),
+          ),
+          
+          // Інформація про товар
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  description,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[600],
+                    height: 1.3,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      price,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF5B4EFF),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () => print('Купити $title'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: const Color(0xFF5B4EFF),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 4,
+                        ),
+                      ),
+                      child: const Text(
+                        'Купити',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
